@@ -42,8 +42,19 @@
 ;; indentation width -- eg. c-basic-offset: use that to adjust your
 ;; personal indentation width, while maintaining the style (and
 ;; meaning) of any files you load.
+(defcustom prelude-whitespace t
+  "Non-nil values enable Prelude's whitespace visualization."
+  :type 'boolean
+  :group 'prelude)
+
+(defcustom prelude-clean-whitespace-on-save t
+  "Cleanup whitespace from file before it's saved.
+Will only occur if prelude-whitespace is also enabled."
+  :type 'boolean
+  :group 'prelude)
+
 (setq-default indent-tabs-mode nil)   ;; don't use tabs to indent
-(setq-default tab-width 8)            ;; but maintain correct appearance
+(setq-default tab-width 2)            ;; but maintain correct appearance
 
 ;; Newline at end of file
 (setq require-final-newline t)
@@ -56,11 +67,6 @@
       `((".*" . ,temporary-file-directory)))
 (setq auto-save-file-name-transforms
       `((".*" ,temporary-file-directory t)))
-
-;; autosave the undo-tree history
-(setq undo-tree-history-directory-alist
-      `((".*" . ,temporary-file-directory)))
-(setq undo-tree-auto-save-history t)
 
 ;; revert buffers automatically when underlying files are changed externally
 (global-auto-revert-mode t)
@@ -160,32 +166,27 @@
              (file-writable-p buffer-file-name))
     (save-buffer)))
 
-(defmacro advise-commands (advice-name commands class &rest body)
+(defmacro advise-commands (advice-name commands &rest body)
   "Apply advice named ADVICE-NAME to multiple COMMANDS.
 
 The body of the advice is in BODY."
   `(progn
      ,@(mapcar (lambda (command)
-                 `(defadvice ,command (,class ,(intern (concat (symbol-name command) "-" advice-name)) activate)
+                 `(defadvice ,command (before ,(intern (concat (symbol-name command) "-" advice-name)) activate)
                     ,@body))
                commands)))
 
 ;; advise all window switching functions
 (advise-commands "auto-save"
-                 (switch-to-buffer other-window windmove-up windmove-down windmove-left windmove-right)
-                 before
+                 (switch-to-buffer other-window) ;; windmove-up windmove-down windmove-left windmove-right)
                  (prelude-auto-save-command))
 
-(add-hook 'mouse-leave-buffer-hook 'prelude-auto-save-command)
+;; (add-hook 'mouse-leave-buffer-hook 'prelude-auto-save-command)
 
-(when (version<= "24.4" emacs-version)
-  (add-hook 'focus-out-hook 'prelude-auto-save-command))
-
-(defadvice set-buffer-major-mode (after set-major-mode activate compile)
-  "Set buffer major mode according to `auto-mode-alist'."
-  (let* ((name (buffer-name buffer))
-         (mode (assoc-default name auto-mode-alist 'string-match)))
-    (with-current-buffer buffer (if mode (funcall mode)))))
+;; Autosave buffers when focus is lost
+(defun prelude-save-all-buffers ()
+  "Save all modified buffers, without prompts."
+  (save-some-buffers 'dont-ask))
 
 ;; highlight the current line
 (global-hl-line-mode +1)
@@ -193,15 +194,6 @@ The body of the advice is in BODY."
 (require 'volatile-highlights)
 (volatile-highlights-mode t)
 (diminish 'volatile-highlights-mode)
-
-;; note - this should be after volatile-highlights is required
-;; add the ability to cut the current line, without marking it
-(defadvice kill-region (before smart-cut activate compile)
-  "When called interactively with no active region, kill a single line instead."
-  (interactive
-   (if mark-active (list (region-beginning) (region-end))
-     (list (line-beginning-position)
-           (line-beginning-position 2)))))
 
 ;; tramp, for sudo access
 (require 'tramp)
@@ -234,6 +226,10 @@ The body of the advice is in BODY."
 
 (add-hook 'text-mode-hook 'prelude-enable-flyspell)
 (add-hook 'text-mode-hook 'prelude-enable-whitespace)
+(add-hook 'c-mode-hook 'prelude-enable-whitespace)
+(add-hook 'c++-mode-hook 'prelude-enable-whitespace)
+(add-hook 'java-mode-hook 'prelude-enable-whitespace)
+(add-hook 'haskell-mode-hook 'prelude-enable-whitespace)
 
 ;; enable narrowing commands
 (put 'narrow-to-region 'disabled nil)
@@ -254,6 +250,20 @@ The body of the advice is in BODY."
 (setq bookmark-default-file (expand-file-name "bookmarks" prelude-savefile-dir)
       bookmark-save-flag 1)
 
+;; <<<<<<< HEAD
+;; load yasnippet
+(require 'yasnippet)
+(add-to-list 'yas-snippet-dirs prelude-snippets-dir)
+;;(add-to-list 'yas-snippet-dirs prelude-personal-snippets-dir)
+(yas-global-mode 1)
+
+;; ;; term-mode does not play well with yasnippet
+;; (add-hook 'term-mode-hook (lambda ()
+;;                             (yas-minor-mode -1)))
+
+;; =======
+;; >>>>>>> upstream/master
+
 ;; projectile is a project management mode
 (require 'projectile)
 (setq projectile-cache-file (expand-file-name  "projectile.cache" prelude-savefile-dir))
@@ -263,6 +273,12 @@ The body of the advice is in BODY."
 (require 'anzu)
 (diminish 'anzu-mode)
 (global-anzu-mode)
+
+;; shorter aliases for ack-and-a-half commands
+(defalias 'ack 'ack-and-a-half)
+(defalias 'ack-same 'ack-and-a-half-same)
+(defalias 'ack-find-file 'ack-and-a-half-find-file)
+(defalias 'ack-find-file-same 'ack-and-a-half-find-file-same)
 
 (global-set-key (kbd "M-%") 'anzu-query-replace)
 (global-set-key (kbd "C-M-%") 'anzu-query-replace-regexp)
@@ -293,37 +309,43 @@ The body of the advice is in BODY."
 (browse-kill-ring-default-keybindings)
 (global-set-key (kbd "s-y") 'browse-kill-ring)
 
-(defadvice exchange-point-and-mark (before deactivate-mark activate compile)
-  "When called with no active region, do not activate mark."
-  (interactive
-   (list (not (region-active-p)))))
-
-(defmacro with-region-or-buffer (func)
-  "When called with no active region, call FUNC on current buffer."
-  `(defadvice ,func (before with-region-or-buffer activate compile)
-     (interactive
-      (if mark-active
-          (list (region-beginning) (region-end))
-        (list (point-min) (point-max))))))
-
-(with-region-or-buffer indent-region)
-(with-region-or-buffer untabify)
-
 ;; automatically indenting yanked text if in programming-modes
+(defvar yank-indent-modes
+  '(LaTeX-mode TeX-mode)
+  "Modes in which to indent regions that are yanked (or yank-popped).
+Only modes that don't derive from `prog-mode' should be listed here.")
+
+(defvar yank-indent-blacklisted-modes
+  '(python-mode slim-mode haml-mode)
+  "Modes for which auto-indenting is suppressed.")
+
+(defvar yank-advised-indent-threshold 1000
+  "Threshold (# chars) over which indentation does not automatically occur.")
+
 (defun yank-advised-indent-function (beg end)
   "Do indentation, as long as the region isn't too large."
-  (if (<= (- end beg) prelude-yank-indent-threshold)
+  (if (<= (- end beg) yank-advised-indent-threshold)
       (indent-region beg end nil)))
 
-(advise-commands "indent" (yank yank-pop) after
-  "If current mode is one of `prelude-yank-indent-modes',
+(defadvice yank (after yank-indent activate)
+  "If current mode is one of 'yank-indent-modes,
 indent yanked text (with prefix arg don't indent)."
   (if (and (not (ad-get-arg 0))
-           (not (member major-mode prelude-indent-sensitive-modes))
+           (not (member major-mode yank-indent-blacklisted-modes))
            (or (derived-mode-p 'prog-mode)
-               (member major-mode prelude-yank-indent-modes)))
+               (member major-mode yank-indent-modes)))
       (let ((transient-mark-mode nil))
         (yank-advised-indent-function (region-beginning) (region-end)))))
+
+(defadvice yank-pop (after yank-pop-indent activate)
+  "If current mode is one of `yank-indent-modes',
+indent yanked text (with prefix arg don't indent)."
+  (when (and (not (ad-get-arg 0))
+             (not (member major-mode yank-indent-blacklisted-modes))
+             (or (derived-mode-p 'prog-mode)
+                 (member major-mode yank-indent-modes)))
+    (let ((transient-mark-mode nil))
+      (yank-advised-indent-function (region-beginning) (region-end)))))
 
 ;; abbrev config
 (add-hook 'text-mode-hook 'abbrev-mode)
@@ -392,8 +414,6 @@ indent yanked text (with prefix arg don't indent)."
 
 ;; operate-on-number
 (require 'operate-on-number)
-(require 'smartrep)
-
 (smartrep-define-key global-map "C-c ."
   '(("+" . apply-operation-to-number-at-point)
     ("-" . apply-operation-to-number-at-point)
@@ -406,25 +426,6 @@ indent yanked text (with prefix arg don't indent)."
     ("#" . apply-operation-to-number-at-point)
     ("%" . apply-operation-to-number-at-point)
     ("'" . operate-on-number-at-point)))
-
-(defadvice server-visit-files (before parse-numbers-in-lines (files proc &optional nowait) activate)
-  "Open file with emacsclient with cursors positioned on requested line.
-Most of console-based utilities prints filename in format
-'filename:linenumber'.  So you may wish to open filename in that format.
-Just call:
-
-  emacsclient filename:linenumber
-
-and file 'filename' will be opened and cursor set on line 'linenumber'"
-  (ad-set-arg 0
-              (mapcar (lambda (fn)
-                        (let ((name (car fn)))
-                          (if (string-match "^\\(.*?\\):\\([0-9]+\\)\\(?::\\([0-9]+\\)\\)?$" name)
-                              (cons
-                               (match-string 1 name)
-                               (cons (string-to-number (match-string 2 name))
-                                     (string-to-number (or (match-string 3 name) ""))))
-                            fn))) files)))
 
 (provide 'prelude-editor)
 

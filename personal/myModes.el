@@ -191,15 +191,16 @@
 
 
 ;; ;; turn on auto fill in modes
-;; (add-hook 'text-mode-hook 'turn-on-auto-fill)
+(add-hook 'text-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'c-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'c++-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'java-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'perl-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'sh-mode-hook 'turn-on-auto-fill)
 ;; (add-hook 'matlab-mode-hook 'turn-on-auto-fill)
-;; (add-hook 'latex-mode-hook 'turn-on-auto-fill)
-;; (add-hook 'LaTeX-mode-hook 'turn-on-auto-fill)
+(add-hook 'tex-mode-hook 'turn-on-auto-fill)
+(add-hook 'latex-mode-hook 'turn-on-auto-fill)
+(add-hook 'LaTeX-mode-hook 'turn-on-auto-fill)
 
 ;; enable hungry delete : delete all white spaces on startup of modes
 (add-hook 'c-mode-hook      '(lambda () (c-toggle-hungry-state 1)))
@@ -347,7 +348,9 @@
                      (set-variable 'py-indent-offset ptw)            
                      (setq python-indent ptw)))))
 
-
+(require 'indent-guide)
+(add-hook 'python-mode-hook 'indent-guide-mode) 
+(add-hook 'ruby-mode-hook 'indent-guide-mode) 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Haskell mode
